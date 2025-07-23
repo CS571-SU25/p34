@@ -1,197 +1,232 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link } from "react-router"; 
+import { Link } from "react-router";
 import CountDown from "./CountDown";
 import boxImg from "../images/JUSH-Display-01-US-cropped.jpeg";
 
+
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 export default function HomePage() {
-  const [allCards,     setAllCards]     = useState([]);
-  const [currentCards, setCurrent]      = useState([]);
-  const [nextCards,    setNext]         = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState(null);
-  const [animating,    setAnimating]    = useState(false);
-  const containerRef                     = useRef(null);
+  const [allCards, setAllCards] = useState([]);
+  const [currentCards, setCurrentCards] = useState([]);
+  const [nextCards, setNextCards] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [animating, setAnimating] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const containerRef = useRef(null);
 
-  const archetypes = ["k9", "yummy", "dragon tail"];
+  // three separate “remaining” pools
+  const yummyRem = useRef([]);
+  const dragonTailRem = useRef([]);
+  const k9Rem = useRef([]);
 
-  function pickThree(list = allCards) {
-    return archetypes
-      .map(arch => {
-        const group = list.filter(c =>
-          (c.archetype || "").toLowerCase() === arch &&
-          c.card_images?.[0]?.image_url_cropped
-        );
-        if (!group.length) return null;
-        const pick = group[Math.floor(Math.random() * group.length)];
-        return pick.card_images[0].image_url_cropped;
-      })
-      .filter(Boolean);
+  // helper to get one random image from a pool, refilling if empty
+  function getNextFor(archetype, poolRef) {
+    if (!poolRef.current.length) {
+      poolRef.current = shuffle(
+        allCards
+          .filter(c => (c.archetype || "").toLowerCase() === archetype)
+          .map(c => c.card_images?.[0]?.image_url_cropped)
+          .filter(Boolean)
+      );
+    }
+    const idx = Math.floor(Math.random() * poolRef.current.length);
+    return poolRef.current.splice(idx, 1)[0];
   }
 
-  // Fetch data once and seed the first slide immediately
+  // draw three in one call
+  function drawThree() {
+    return [
+      getNextFor("yummy", yummyRem),
+      getNextFor("dragon tail", dragonTailRem),
+      getNextFor("k9", k9Rem)
+    ];
+  }
+
+  // 1️⃣ initial fetch
   useEffect(() => {
     fetch("https://db.ygoprodeck.com/api/v7/cardinfo.php")
       .then(res => {
-        if (!res.ok) throw new Error("Status " + res.status);
+        if (!res.ok) throw new Error(res.status);
         return res.json();
       })
       .then(json => {
-        const data = json.data || [];
-        setAllCards(data);
-        setCurrent(pickThree(data));
+        setAllCards(json.data || []);
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  // Every 6s (4s display + 2s transition), stage next slide
+  // 2️⃣ seed initial three as soon as allCards arrives
   useEffect(() => {
-    if (!allCards.length) return;
+    if (allCards.length && currentCards.length === 0) {
+      setCurrentCards(drawThree());
+    }
+  }, [allCards]);
+
+  // 3️⃣ schedule slide every 6s
+  useEffect(() => {
+    if (loading || error) return;
     const iv = setInterval(() => {
-      setNext(pickThree());
+      setNextCards(drawThree());
       setAnimating(true);
     }, 6000);
     return () => clearInterval(iv);
-  }, [allCards]);
+  }, [loading, error, allCards]);
 
-  // Animate slide transition
+  // 4️⃣ animate transition
   useEffect(() => {
     if (!animating) return;
     const curr = containerRef.current.querySelector(".slide.current");
-    const next = containerRef.current.querySelector(".slide.next");
-
+    const nxt = containerRef.current.querySelector(".slide.next");
     requestAnimationFrame(() => {
       curr.style.transform = "translateX(-100%)";
-      next.style.transform = "translateX(0)";
+      nxt.style.transform = "translateX(0)";
     });
-
     function onEnd() {
-      setCurrent(nextCards);
-      setNext([]);
+      setCurrentCards(nextCards);
+      setNextCards([]);
       setAnimating(false);
-
       curr.style.transition = "none";
-      curr.style.transform  = "translateX(0)";
-      curr.offsetHeight; // force reflow
+      curr.style.transform = "translateX(0)";
+      curr.offsetHeight;  // reflow
       curr.style.transition = "transform 2s ease-in-out";
     }
-
     curr.addEventListener("transitionend", onEnd, { once: true });
     return () => curr.removeEventListener("transitionend", onEnd);
   }, [animating, nextCards]);
 
+  // toggle sidebar
+  function toggleSidebar() {
+    setSidebarOpen(open => !open);
+  }
+
+  // render guards
   if (loading) return <p>Loading…</p>;
-  if (error)   return <p>Error: {error}</p>;
+  if (error) return <p>Error: {error}</p>;
+  if (currentCards.length !== 3) return <p>Loading…</p>;
 
   const slideStyle = {
-    position:   "absolute",
-    top:        0,
-    left:       0,
-    width:      "100%",
-    height:     "100%",
-    display:    "flex",
-    transform:  "translateX(0)",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    transform: "translateX(0)",
     transition: "transform 2s ease-in-out"
   };
 
-  return (
-    <div style={{
-      paddingTop:    "4rem",   // space for your nav/links
-      width:         "100vw",
-      minHeight:     "100vh",
-      boxSizing:     "border-box",
-      background:    "#fff",
-      overflowX:     "hidden",
-      display:       "flex",
-      flexDirection: "column",
-      alignItems:    "center"
-    }}>
-      {/* Navigation buttons */}
-      <nav style={{ marginBottom: "1rem" }}>
-        <Link to="/cardlist">
-          <button style={{ marginRight: "0.5rem" }}>Card List</button>
-        </Link>
-        <Link to="/credentials">
-          <button style={{ marginRight: "0.5rem" }}>Credentials</button>
-        </Link>
-        <Link to="/tutorial">
-          <button>Tutorial</button>
-        </Link>
-      </nav>
+  const sidebarWidth = 200;
 
-      {/* Full-page slideshow */}
-      <div
-        ref={containerRef}
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, overflow: "hidden" }}>
+      {/* Sidebar toggle */}
+      <button
+        onClick={toggleSidebar}
         style={{
-          position:     "relative",
-          width:        "100%",    // full page width
-          height:       "75vh",    // 75% of viewport height
-          overflow:     "hidden",
-          marginBottom: "2rem"
+          position: "absolute",
+          top: 16,
+          right: 16,
+          zIndex: 1000,
+          fontSize: "1.5rem",
+          background: "rgba(0,0,0,0.5)",
+          color: "#fff",
+          border: "none",
+          borderRadius: 4,
+          padding: "0.5rem 1rem",
+          cursor: "pointer"
         }}
       >
-        {/* current slide */}
+        ☰
+      </button>
+
+      {/* Slide-out sidebar */}
+      <div style={{
+        position: "fixed",
+        top: 0,
+        right: 0,
+        height: "100%",
+        width: sidebarOpen ? sidebarWidth : 0,
+        background: "#000",
+        color: "#000",
+        overflowX: "hidden",
+        transition: "width 0.3s ease",
+        zIndex: 900,
+        paddingTop: sidebarOpen ? "4rem" : 0
+      }}>
+        {sidebarOpen && (
+          <nav style={{ display: "flex", flexDirection: "column", marginLeft: 16 }}>
+            <Link to="/cardlist" style={linkStyle}>Card List</Link>
+            <Link to="/credentials" style={linkStyle}>Credentials</Link>
+            <Link to="/tutorial" style={linkStyle}>Tutorial</Link>
+          </nav>
+        )}
+      </div>
+
+      {/* Full‐screen slideshow */}
+      <div ref={containerRef} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }}>
         <div className="slide current" style={slideStyle}>
           {currentCards.map((src, i) => (
-            <img
-              key={i}
-              src={src}
-              alt=""
-              style={{
-                flex:      1,
-                width:     "33.33%",   // three images across
-                height:    "100%",
-                objectFit: "cover"
-              }}
+            <img key={i} src={src} alt=""
+              style={{ flex: 1, width: "33.33%", height: "100%", objectFit: "cover" }}
             />
           ))}
         </div>
-
-        {/* next slide */}
         {animating && (
-          <div
-            className="slide next"
-            style={{ ...slideStyle, transform: "translateX(100%)" }}
-          >
+          <div className="slide next" style={{ ...slideStyle, transform: "translateX(100%)" }}>
             {nextCards.map((src, i) => (
-              <img
-                key={i}
-                src={src}
-                alt=""
-                style={{
-                  flex:      1,
-                  width:     "33.33%",
-                  height:    "100%",
-                  objectFit: "cover"
-                }}
+              <img key={i} src={src} alt=""
+                style={{ flex: 1, width: "33.33%", height: "100%", objectFit: "cover" }}
               />
             ))}
           </div>
         )}
-
-        {/* centered overlay box (optional) */}
-        <img
-          src={boxImg}
-          alt="Justice Hunters Box"
-          style={{
-            position:      "absolute",
-            top:           "50%",
-            left:          "50%",
-            transform:     "translate(-50%, -50%)",
-            maxWidth:      "50vw",
-            maxHeight:     "60vh",
-            objectFit:     "contain",
-            zIndex:        1,
-            pointerEvents: "none"
-          }}
-        />
       </div>
 
-      {/* Countdown below */}
-      <CountDown />
+      {/* Countdown */}
+      <div
+        className="countdown"
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          textAlign: "center",
+          zIndex: 2,
+          pointerEvents: "none",
+          fontSize: "3rem",
+          color: "#fff",
+          textShadow: "0 0 5px rgba(0,0,0,0.7)"
+        }}
+      >
+        <CountDown />
+      </div>
     </div>
   );
 }
+
+// sidebar link style
+const linkStyle = {
+  color: "#fff",  // pure white
+  textDecoration: "none",
+  fontSize: "1.1rem",
+  padding: "0.5rem 0"
+};
+
+
+
+
+
 
 
 

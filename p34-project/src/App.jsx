@@ -8,7 +8,7 @@ import CountDown from './components/CountDown'
 import CardList from './components/CardList'
 import Credentials from './components/Credentials'  
 import Tutorial from './components/Tutorial'
-
+import "./index.css"
 function App() {
   return <HashRouter>
     <Routes>
