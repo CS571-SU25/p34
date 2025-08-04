@@ -1,94 +1,66 @@
 import React, { useState, useEffect } from "react";
-import SearchBar from "./SearchBar";
 
-export default function CardList() {
-  const [cards, setCards] = useState([]);
+export default function FutureSupport() {
+  const [cardsByArch, setCardsByArch] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState("");
   const [selectedImage, setSelectedImage] = useState(null);
 
+  const targetCards = {
+    k9: ["K9-04 Noroi", "K9-666 \"Jacks\""],
+    yummy: ["Marshmao☆Yummy", "Yum☆Yum☆Yummys"],
+    dracotail: ["Dracotail Phrixl", "Dracotail Sting"]
+  };
+
   useEffect(() => {
-    fetch("https://db.ygoprodeck.com/api/v7/cardinfo.php?cardset=Justice Hunters")
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(json => setCards(json.data || []))
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
+    async function fetchData() {
+      try {
+        const archetypes = Object.keys(targetCards);
+        const results = {};
+
+        for (const arch of archetypes) {
+          const res = await fetch(
+            `https://db.ygoprodeck.com/api/v7/cardinfo.php?archetype=${encodeURIComponent(
+              arch
+            )}`
+          );
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const json = await res.json();
+          const data = json.data || [];
+
+          results[arch] = data.filter((card) =>
+            targetCards[arch].includes(card.name)
+          );
+        }
+
+        setCardsByArch(results);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
   }, []);
 
-  if (loading) return <p>Loading cards…</p>;
-  if (error) return <p>Error: {error}</p>;
+  if (loading) return <p style={{ color: "white" }}>Loading future support…</p>;
+  if (error) return <p style={{ color: "red" }}>Error: {error}</p>;
 
-  const q = query.trim().toLowerCase();
-
-  function extractSetNumber(card) {
-    const code = card.card_sets?.[0]?.set_code || "";
-    const match = code.match(/(\d+)$/);
-    return match ? parseInt(match[1], 10) : Infinity;
-  }
-
-  function startsWithJUSH(card) {
-    const code = card.card_sets?.[0]?.set_code || "";
-    return code.toUpperCase().startsWith("JUSH");
-  }
-
-  const filtered = cards.filter(card => {
-    const name = card.name.toLowerCase();
-    const desc = card.desc.toLowerCase();
-    const sets = card.card_sets || [];
-    const setCode = (sets[0]?.set_code || "").toLowerCase();
-    const rarities = sets
-      .map(s => `${s.set_rarity} (${s.set_rarity_code})`)
-      .join(", ")
-      .toLowerCase();
-
-    return (
-      name.includes(q) ||
-      desc.includes(q) ||
-      setCode.includes(q) ||
-      rarities.includes(q)
-    );
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    const aJush = startsWithJUSH(a);
-    const bJush = startsWithJUSH(b);
-
-    if (aJush && !bJush) return -1;
-    if (!aJush && bJush) return 1;
-    return extractSetNumber(a) - extractSetNumber(b);
-  });
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        overflowY: "auto",
-        padding: "1rem",
-        backgroundColor: "#001f3f",
-        color: "#fff",
-        boxSizing: "border-box",
-        textAlign: "left"
-      }}
-    >
-      <h2>Justice Hunters Card List</h2>
-      <SearchBar value={query} onChange={setQuery} />
+  const renderSection = (archetype, cards) => (
+    <div key={archetype} style={{ marginBottom: "2rem" }}>
+      <h2 style={{ borderBottom: "2px solid #fff", paddingBottom: "0.5rem" }}>
+        {archetype.toUpperCase()}
+      </h2>
       <ul style={{ listStyle: "none", padding: 0 }}>
-        {sorted.map(card => {
+        {cards.map((card) => {
           const imgSmall = card.card_images?.[0]?.image_url_small;
           const imgFull = card.card_images?.[0]?.image_url;
           const sets = card.card_sets || [];
           const code = sets[0]?.set_code || "N/A";
           const rarities = sets
-            .map(s => `${s.set_rarity} ${s.set_rarity_code}`)
-            .join(", ");
+            .map((s) => `${s.set_rarity} ${s.set_rarity_code}`)
+            .join(", ") || "N/A";
 
           const descParts = card.desc.split("●").map((part, idx) =>
             idx === 0 ? part.trim() : "●" + part.trim()
@@ -120,7 +92,7 @@ export default function CardList() {
                 {card.name}
               </strong>
               <em style={{ display: "block", marginBottom: 8 }}>
-                {card.type || card.humanReadableCardType}
+                {card.type}
               </em>
 
               {descParts.map((text, i) => (
@@ -133,12 +105,35 @@ export default function CardList() {
                 <strong>Set Code:</strong> {code}
               </p>
               <p style={{ margin: "0 0 0.5rem", fontStyle: "italic" }}>
-                <strong>Rarities:</strong> {rarities || "N/A"}
+                <strong>Rarities:</strong> {rarities}
               </p>
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        overflowY: "auto",
+        padding: "1rem",
+        backgroundColor: "#001f3f",
+        color: "#fff",
+        boxSizing: "border-box",
+        textAlign: "left"
+      }}
+    >
+      <h1>Future Support Cards</h1>
+      {Object.entries(cardsByArch).map(([arch, cards]) =>
+        renderSection(arch, cards)
+      )}
 
       {selectedImage && (
         <div
@@ -158,7 +153,7 @@ export default function CardList() {
           }}
           role="dialog"
           aria-modal="true"
-          aria-label="Card image preview"
+          aria-label="Future support card image preview"
           tabIndex={0}
           onKeyDown={(e) => e.key === "Escape" && setSelectedImage(null)}
         >
